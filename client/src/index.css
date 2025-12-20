@@ -1,0 +1,504 @@
+/* ================================
+   Design Tokens (global variables)
+   ================================ */
+:root {
+  /* 🎨 Colors */
+  --color-bg: #f9f5fb;              /* Soft page background */
+  --color-surface: #ffffff;         /* Cards, forms, tables background */
+  --color-primary: #ff71bd;         /* Main brand color (buttons, headers) */
+  --color-primary-hover: #ff5cad;   /* Darker shade for hover states */
+  --color-secondary:#f3f3f3;
+  --color-accent: #ff96ce;          /* Accent color for highlights */
+  --color-border: #d8cfd6;          /* Borders and table lines */
+  --color-text-main: #333333;       /* Main body text */
+  --color-text-muted: #757575;      /* Secondary / muted text */
+  --color-link: #337ab7;            /* Links color */
+  --color-danger: #d9534f;          /* Destructive actions (delete, etc.) */
+  --color-table-header-bg: #ffe0ea;    /* Background color for table headers */
+  --color-table-border: #ddd;          /* Table border and cell divider color */
+
+  /* 🅰️ Typography */
+  --font-family-base: "Candara", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-size-base: 16px;           /* Default text size */
+  --font-size-sm: 14px;             /* Small text (labels, help text) */
+  --font-size-lg: 20px;             /* Titles, important text */
+
+  /* 📏 Spacing scale */
+  --spacing-xs: 4px;                /* Very small spacing */
+  --spacing-sm: 8px;                /* Small spacing (between labels and inputs) */
+  --spacing-md: 16px;               /* Default spacing (between sections) */
+  --spacing-lg: 24px;               /* Large spacing (page padding) */
+  --spacing-page-narrow: 10px;         /* Narrow spacing for compact page layouts (margins/padding) */
+  /* ⭕ Border radius */
+  --radius-sm: 4px;                 /* Small rounding (inputs) */
+  --radius-md: 8px;                 /* Medium rounding (buttons, cards) */
+  --radius-lg: 16px;                /* Large rounding (big cards, modals) */
+  --radius-pill: 999px;                /* Large pill-shaped border radius (for rounded buttons/inputs) */
+
+  /* 🌫 Shadows */
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.08); /* Soft card shadow */
+
+}
+
+/* ================================
+   Global base styles
+   ================================ */
+
+body {
+  /* Background image for the whole app */
+  background-image: url("3.jpeg");
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
+
+  margin: 0;
+  padding: 0;
+
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  color: var(--color-text-main);
+}
+
+/* Generic page container (used for centering content on the page) */
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end; /* Right alignment for RTL layout */
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--spacing-lg);
+}
+
+/* Links (global) */
+a {
+  color: var(--color-link);
+  text-decoration: none;
+  margin-top: var(--spacing-sm);
+  display: block;
+  text-align: right;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Special “back to login” link */
+a.back-to-login {
+  color: var(--color-primary);
+}
+
+a.back-to-login:hover {
+  text-decoration: underline;
+}
+
+/* ================================
+   Auth pages (Login / Register)
+   ================================ */
+
+/* Main wrapper for login/register forms */
+.login-container,
+.register-container {
+  max-width: 400px;
+  width: 100%;
+  margin: 0 auto;
+  background-color: rgba(255, 255, 255, 0.94); /* Slight transparency over bg image */
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  box-sizing: border-box;
+}
+
+/* Form title */
+.login-container h1,
+.register-container h1 {
+  font-size: var(--font-size-lg);
+  margin-bottom: var(--spacing-md);
+  text-align: center;
+  color: var(--color-primary);
+}
+
+/* Generic form layout */
+.login-form,
+.register-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm); /* Vertical spacing between form elements */
+}
+
+/* Labels */
+.login-form label,
+.register-form label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-main);
+  margin-bottom: 2px;
+  text-align: right;
+}
+
+/* Inputs and selects */
+.login-form input,
+.login-form select,
+.register-form input,
+.register-form select {
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  background-color: #ffffff;
+  color: var(--color-text-main);
+}
+
+/* Main submit buttons (login/register) */
+.login-form button,
+.register-form button {
+  width: 100%;
+  padding: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.login-form button:hover,
+.register-form button:hover {
+  background-color: var(--color-primary-hover);
+  transform: translateY(-1px); /* Slight “lift” effect on hover */
+}
+
+/* Error message under the form */
+.form-error {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  margin-top: var(--spacing-xs);
+  text-align: right;
+}
+
+/* ================================
+   Project Management (Designer view)
+   ================================ */
+
+/* Main container for project management page */
+.project-management-container {
+  max-width: 1000px;
+  margin: 40px auto;
+  background-color: rgba(255, 255, 255, 0.95);
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  box-sizing: border-box;
+}
+
+/* Page titles */
+.project-management-container h1,
+.project-management-container h2 {
+  margin-top: 0;
+  margin-bottom: var(--spacing-md);
+  color: var(--color-primary);
+  text-align: right;
+}
+
+/* Labels inside forms (create/edit project) */
+.project-management-container label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-main);
+}
+
+/* Inputs, selects and textareas in project management forms */
+.project-management-container input,
+.project-management-container select,
+.project-management-container textarea {
+  width: 100%;
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: #ffffff;
+  color: var(--color-text-main);
+  box-sizing: border-box;
+}
+
+/* Primary buttons (create / save project) */
+.project-management-container button {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.project-management-container button:hover {
+  background-color: var(--color-primary-hover);
+  transform: translateY(-1px);
+}
+
+/* Project list table */
+.project-management-container table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--spacing-md);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+/* Table header cells */
+.project-management-container th {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  padding: var(--spacing-sm);
+  text-align: right;
+}
+
+/* Table body cells */
+.project-management-container td {
+  background-color: var(--color-surface);
+  color: var(--color-text-main);
+  padding: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Action buttons inside table (edit/delete) */
+.project-management-container .action-button {
+  background-color: var(--color-accent);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+  margin-left: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+.project-management-container .action-button.delete {
+  background-color: var(--color-danger); /* Different color for delete */
+}
+
+/* ================================
+   Suppliers & Workers Management
+   ================================ */
+
+.suppliers-management-container,
+.workers-management-container {
+    max-width: 1100px;
+    margin: 10px auto;
+    border-radius: 16px;
+    background-color: rgba(255, 255, 255, 0.95);
+    padding: var(--spacing-md);
+    box-shadow: var(--shadow-soft);
+    box-sizing: border-box;
+
+}
+.suppliers-management-card,
+.workers-management-card {
+    background: rgba(255,255,255,0.93);
+    border-radius: 16px;
+    padding: 24px 32px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    margin-bottom: 24px;
+  }
+
+
+
+/* Titles and labels inside suppliers & workers pages */
+.suppliers-management-h1,
+.suppliers-management-h2,
+.suppliers-management-label,
+.workers-management-h1,
+.workers-management-h2,
+.workers-management-label {
+    color: var(--color-text-main);
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    text-align:center;
+
+}
+.suppliers-management-heading,
+.workers-management-heading {
+    margin-top: 0;
+    margin-bottom: 12px;
+    font-size: 2rem;
+}
+.suppliers-management-sub-heading,
+.workers-management-sub-heading {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 1.2rem;
+
+ }
+ .suppliers-management-row,
+.workers-management-row {
+   width:100%;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+/* Inputs, selects, textareas, buttons (shared styles) */
+.suppliers-management-container input,
+.suppliers-management-container select,
+.suppliers-management-container textarea,
+.suppliers-management-container button,
+.workers-management-container input,
+.workers-management-container select,
+.workers-management-container textarea,
+.workers-management-container button {
+    width: 100%;
+    padding: 8px 10px;
+    margin-bottom: var(--spacing-sm);
+    border: 1px solid var(--color-border);
+    box-sizing: border-box;
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+
+
+}
+
+/* Primary buttons inside suppliers & workers pages */
+.suppliers-management-container button,
+.workers-management-container button {
+    color: var(--color-text-main);
+    border: none;
+    cursor: pointer;
+    padding: 8px 16px;
+    box-shadow: var(--shadow-soft);
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+.suppliers-management-button-primary,
+.workers-management-button-primary  {
+    background-color: var(--color-primary);
+
+ }
+.suppliers-management-button-secondary,
+.workers-management-button-secondary  {
+    background-color: var(--color-secondary);
+  }
+.suppliers-management-container button:hover,
+.workers-management-container button:hover {
+    background-color: var(--color-primary-hover);
+    transform: translateY(-1px);
+}
+
+.suppliers-management-link,
+.workers-management-link {
+    padding: 8px 16px;
+    border-radius: var(--radius-pill);
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    background-color: var(--color-secondary);
+    color: var(--color-text-main);
+    box-shadow: var(--shadow-soft);
+
+
+}
+
+
+.suppliers-management-table,
+.workers-management-table {
+    width: 100%;
+    border-collapse: collapse;
+    marginTop: 8px;
+    fontSize: 0.95rem;
+
+
+  }
+.suppliers-management-thtd,
+.workers-management-thtd {
+    color: var(--color-text-main);
+    border: 1px solid var(--color-table-border);
+    padding: 8px 10px;
+    text-align: center;
+
+  }
+
+.suppliers-management-thtd-header,
+.workers-management-thtd-header{
+    font-weight: 600;
+    background-color: var(--color-table-header-bg);
+
+
+
+}
+/* ================================
+   Project Menu (navigation between project pages)
+   ================================ */
+
+/* Fullscreen menu container */
+.menu-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    background-color: var(--color-bg);
+}
+
+/* Title at the top of the project menu */
+.menu-container h1 {
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-lg);
+}
+
+/* Buttons grid for project sections */
+.project-menu-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--spacing-md);
+}
+
+/* Single project menu button */
+.project-menu-button {
+  min-width: 180px;
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  color: var(--color-text-main);
+  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--color-border);
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease,
+    box-shadow 0.2s ease;
+}
+
+.project-menu-button:hover {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* ================================
+   Client-facing options (images + text)
+   ================================ */
+
+.client-options-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Row with image + option text */
+.client-option {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Option thumbnail image */
+.client-option img {
+  max-width: 100px;
+  max-height: 75px;
+  margin-left: var(--spacing-sm); /* Space between image and text (RTL) */
+}
