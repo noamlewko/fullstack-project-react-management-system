@@ -27,3 +27,11 @@ dist/
 build/
 .DS_Store
 *.log
+
+
+.env
+.env.*
+server/.env
+server/.env.*
+client/.env
+client/.env.*

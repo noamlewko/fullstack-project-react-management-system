@@ -5,10 +5,14 @@
  * - Automatically attaches JSON headers and Authorization token (if exists).
  * - Throws an Error if the response is not ok.
  */
+
+const API = process.env.REACT_APP_API_URL || "";
+
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem("token");
 
-  const res = await fetch(path, {
+  const res = await fetch(`${API}${path}`, {
+
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -335,4 +339,17 @@ export function deleteQuestionnaireTemplate(templateId) {
   return apiFetch(`/api/questionnaires/templates/${templateId}`, {
     method: "DELETE",
   });
+}
+export async function uploadImage(formData) {
+  const token = localStorage.getItem("token");
+
+  const res = await fetch(`${API}/upload-image`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || "Upload failed");
+  return data; // { imageUrl: ... }
 }

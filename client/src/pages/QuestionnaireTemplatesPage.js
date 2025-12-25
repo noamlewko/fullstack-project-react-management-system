@@ -6,9 +6,11 @@ import {
   createQuestionnaireTemplate,
   updateQuestionnaireTemplate,
   deleteQuestionnaireTemplate,
+  uploadImage,
 } from "../api";
 import { Link } from "react-router-dom";
 import DesignerNav from "../components/DesignerNav";
+
 
 export default function QuestionnaireTemplatesPage() {
   const [templates, setTemplates] = useState([]);
@@ -483,6 +485,30 @@ export default function QuestionnaireTemplatesPage() {
                               )
                             }
                           />
+                          <input 
+                            type="file"
+                            accept="image/*"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+
+                              try {
+                                const formData = new FormData();
+                                formData.append("image", file);
+
+                                const { imageUrl } = await uploadImage(formData);
+
+                                updateOptionField(qIndex, optIndex, "imageUrl", imageUrl);
+                              } catch (err) {
+                                setError(err.message || "Failed to upload image");
+                              }
+                            }}
+                          />
+                          <button type="button" onClick={() => updateOptionField(qIndex, optIndex, "imageUrl", "")}>
+                            Clear
+                          </button>
+
+
                           <button
                             type="button"
                             onClick={() =>

@@ -1,7 +1,15 @@
 // app.js – cleaned + merged version (projects, workers, suppliers, options, questionnaires)
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
+console.log("JWT_SECRET value:", process.env.JWT_SECRET);
 
+const { v2: cloudinary } = require("cloudinary");
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 const express = require("express");
 const mongoose = require("mongoose");
@@ -19,13 +27,16 @@ const QuestionnaireTemplate = require("./models/QuestionnaireTemplate");
 const { isAuthenticated, isDesigner } = require("./middlewares/auth");
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 /* ============================================================
  * MongoDB connection
  * ============================================================ */
-mongoose
-  .connect("mongodb://localhost:27017/interior_design")
+if (!process.env.MONGO_URI) {
+  throw new Error("Missing MONGO_URI in environment variables");
+}
+mongoose.connect(process.env.MONGO_URI)
+
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("Could not connect to MongoDB", err));
 
@@ -51,21 +62,33 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${file.originalname}`),
 });
 
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
-// Upload single image
-app.post("/upload-image", upload.single("image"), (req, res) => {
+
+app.post("/upload-image", upload.single("image"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
-    const imagePath = `/uploads/${req.file.filename}`;
-    res.json({ imageUrl: imagePath });
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+    // up buffer to Cloudinary
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: "designer-client-proj" }, 
+        (error, uploaded) => {
+          if (error) reject(error);
+          else resolve(uploaded);
+        }
+      );
+      stream.end(req.file.buffer);
+    });
+
+    // URL Prodection
+    res.json({ imageUrl: result.secure_url });
   } catch (err) {
     console.error("Error uploading image:", err);
     res.status(500).json({ message: "Error uploading image" });
   }
 });
+
 
 /* ============================================================
  * Auth routes (register / login)
