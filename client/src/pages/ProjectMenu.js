@@ -116,6 +116,17 @@ export default function ProjectMenu() {
     display: "block",
     marginBottom: 4,
   };
+  const labelStyleBack = { 
+    padding: "8px 16px",
+    borderRadius:"999px",
+    border:"none",
+    cursor:"pointer",
+    fontWeight: 600,
+    backgroundColor: "#f3f3f3",
+    color: "#333333",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+    width:"130px",
+  };
 
   const valueStyle = { color: "#444" };
 
@@ -148,10 +159,9 @@ export default function ProjectMenu() {
   return (
     <div style={pageStyle}>
       <div style={cardStyle}>
-        <Link to={backHref} style={backLinkStyle}>
-          ← Back to dashboard
-        </Link>
-
+      <div style={{display:"flex",justifyContent:"flex-end"}}>
+        <Link to={`/designer`} style={labelStyleBack}>Back to Dashbord</Link>
+      </div>
         <h1 style={titleStyle}>Project Menu</h1>
         <p style={subStyle}>
           Manage all aspects of this interior design project from here.

@@ -8,11 +8,12 @@ import {
   deleteQuestionnaireTemplate,
   uploadImage,
 } from "../api";
-import { Link } from "react-router-dom";
+import { useParams,Link } from "react-router-dom";
 import DesignerNav from "../components/DesignerNav";
 
 
 export default function QuestionnaireTemplatesPage() {
+  const { projectId } = useParams();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -231,7 +232,17 @@ export default function QuestionnaireTemplatesPage() {
     alignItems: "baseline",
     marginBottom: 8,
   };
-
+  const labelStyle = { 
+    padding: "8px 16px",
+    borderRadius:"999px",
+    border:"none",
+    cursor:"pointer",
+    fontWeight: 600,
+    backgroundColor: "#f3f3f3",
+    color: "#333333",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+  };
+  
   const sectionTitleStyle = {
     fontSize: 18,
     fontWeight: 600,
@@ -252,10 +263,14 @@ export default function QuestionnaireTemplatesPage() {
               Design Questionnaires
             </h1>
             <div style={{ fontSize: 14 }}>
-              <Link to="/designer">← Back to projects</Link>
+            <Link to={`/designer`} style={labelStyle}>Back to Dashbord</Link>
             </div>
           </div>
-
+    color: var(--color-text-main);
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    text-align:center;
           <p style={{ marginBottom: 16 }}>
             Create questionnaires to understand your client&apos;s style and
             preferences.

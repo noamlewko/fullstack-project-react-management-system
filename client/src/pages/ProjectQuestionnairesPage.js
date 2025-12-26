@@ -427,6 +427,17 @@ export default function ProjectQuestionnairesPage() {
     justifyContent: "center",
     zIndex: 9999,
   };
+    const labelStyleBack = { 
+    padding: "8px 16px",
+    borderRadius:"999px",
+    border:"none",
+    cursor:"pointer",
+    fontWeight: 600,
+    backgroundColor: "#f3f3f3",
+    color: "#333333",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+    width:"110px",
+  };
 
   // -------------------------------------------------
   // Render
@@ -434,9 +445,9 @@ export default function ProjectQuestionnairesPage() {
   return (
     <div style={pageStyle}>
       <div style={cardStyle}>
-        <Link to={`/project/${projectId}`} style={backLinkStyle}>
-          ← Back to project
-        </Link>
+        <div style={{display:"flex",justifyContent:"flex-end"}}>
+           <Link to={`/project/${projectId}/menu`} style={labelStyleBack}>Back to Project</Link>
+        </div>
 
         <h1 style={{ fontSize: 30, fontWeight: 700, marginBottom: 8 }}>
           Design Questionnaire

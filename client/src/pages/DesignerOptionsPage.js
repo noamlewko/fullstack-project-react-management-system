@@ -227,15 +227,34 @@ export default function DesignerOptionsPage() {
     marginBottom: 16,
     color: "#555",
   };
+  const labelStyle = { 
+    padding: "8px 16px",
+    borderRadius:"999px",
+    border:"none",
+    cursor:"pointer",
+    fontWeight: 600,
+    backgroundColor: "#f3f3f3",
+    color: "#333333",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+  };
+    const titleRowStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+    marginBottom: 8,
+  };
 
   return (
     <div style={pageStyle}>
-      <div style={cardStyle}>
-        <div style={{ marginBottom: 8, fontSize: 14 }}>
-          <Link to="/designer">← Back to Designer Dashboard</Link>
-        </div>
-
-        <h1 style={titleStyle}>Design Options</h1>
+        <div style={cardStyle}>
+          <div style={titleRowStyle}>
+            <h1 style={{ fontSize: 30, fontWeight: 700 }}>
+              Design Options
+            </h1>
+            <div style={{ fontSize: 14 }}>
+            <Link to={`/designer`} style={labelStyle}>Back to Dashbord</Link>
+            </div>
+          </div>
         <p style={subtitleStyle}>
           Here you can define global design categories and options that you
           will later use with your clients (e.g. style, colors, materials).

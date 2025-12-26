@@ -117,6 +117,18 @@ const ProjectSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    
+// Pending invitations: client must approve before being linked to the project
+pendingInvites: [
+  {
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }, // designer
+    status: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
+    createdAt: { type: Date, default: Date.now },
+  },
+],
+
+
     associatedClients: [
       {
         type: mongoose.Schema.Types.ObjectId,

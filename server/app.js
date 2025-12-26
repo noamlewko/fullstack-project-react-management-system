@@ -152,7 +152,8 @@ app.post("/api/login", async (req, res) => {
  * Projects CRUD (with workers, suppliers, color selections)
  * ============================================================ */
 
-// Create project
+// Create project (Designer creates project + sends a PENDING invite to client)
+// IMPORTANT: Client is NOT linked automatically anymore. Client must accept the invite.
 app.post(
   "/api/projects",
   isAuthenticated,
@@ -201,11 +202,13 @@ app.post(
         ? colorSelections
         : [];
 
+      // Find client user by username
       const client = await User.findOne({ username: clientUsername });
       if (!client) {
         return res.status(404).json({ message: "Client not found" });
       }
 
+      // Create project WITHOUT linking client yet (must be accepted)
       const project = await new ProjectModel({
         name,
         startDate,
@@ -213,7 +216,20 @@ app.post(
         budget,
         clientUsername,
         createdBy: req.user.id,
-        associatedClients: [client._id],
+
+        // Client will be linked only AFTER accept
+        associatedClients: [],
+
+        // New: pending invitation for the client
+        pendingInvites: [
+          {
+            clientId: client._id,
+            invitedBy: req.user.id, // designer id
+            status: "pending",
+            createdAt: new Date(),
+          },
+        ],
+
         workers: workersData,
         suppliers: suppliersData,
         colorSelections: colorSelectionsData,
@@ -226,6 +242,7 @@ app.post(
     }
   }
 );
+
 
 // Update project
 app.put(
@@ -338,7 +355,9 @@ app.get("/api/projects", isAuthenticated, async (req, res) => {
     let projects = [];
 
     if (role === "designer") {
-      projects = await ProjectModel.find({ createdBy: id });
+      projects = await ProjectModel.find({ createdBy: id })
+      .populate("pendingInvites.clientId", "username")
+      .lean();
     } else if (role === "client") {
       projects = await ProjectModel.find({ associatedClients: id });
     }
@@ -360,7 +379,16 @@ app.get("/api/projects/:id", isAuthenticated, async (req, res) => {
     if (role === "designer") filter.createdBy = userId;
     if (role === "client") filter.associatedClients = userId;
 
-    const project = await ProjectModel.findOne(filter);
+    // Build the query first
+    let query = ProjectModel.findOne(filter);
+
+    // Only designers need to see invite statuses (pending/accepted/rejected)
+    if (role === "designer") {
+      query = query.populate("pendingInvites.clientId", "username");
+    }
+
+    const project = await query.lean();
+
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
@@ -368,6 +396,163 @@ app.get("/api/projects/:id", isAuthenticated, async (req, res) => {
     res.json(project);
   } catch (err) {
     console.error("Error fetching project:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ============================================================
+ * Project Invitations (designer <-> client approval)
+ * ============================================================ */
+
+/**
+ * Designer sends a project invitation to a client (by username).
+ * - Only the project owner (designer) can invite.
+ * - Creates a "pending" invite inside the project.
+ */
+app.post(
+  "/api/projects/:id/invite",
+  isAuthenticated,
+  isDesigner,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { clientUsername } = req.body;
+
+      if (!clientUsername) {
+        return res.status(400).json({ message: "clientUsername is required" });
+      }
+
+      // Only the designer who created the project can invite
+      const project = await ProjectModel.findOne({
+        _id: id,
+        createdBy: req.user.id,
+      });
+
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Find client user
+      const client = await User.findOne({ username: clientUsername });
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+
+      // If already linked -> no need to invite
+      const alreadyLinked = (project.associatedClients || []).some(
+        (cid) => String(cid) === String(client._id)
+      );
+      if (alreadyLinked) {
+        return res.status(400).json({ message: "Client already linked" });
+      }
+
+      // If already invited and pending -> prevent duplicates
+      const alreadyPending = (project.pendingInvites || []).some(
+        (inv) =>
+          String(inv.clientId) === String(client._id) &&
+          inv.status === "pending"
+      );
+      if (alreadyPending) {
+        return res.status(400).json({ message: "Invite already pending" });
+      }
+
+      project.pendingInvites = project.pendingInvites || [];
+      project.pendingInvites.push({
+        clientId: client._id,
+        invitedBy: req.user.id,
+        status: "pending",
+        createdAt: new Date(),
+      });
+
+      project.markModified("pendingInvites");
+      await project.save();
+
+      res.json({ message: "Invite sent" });
+    } catch (err) {
+      console.error("Invite error:", err);
+      res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+/**
+ * Client fetches all pending invites that belong to them.
+ * Returns a list of projects that have a pending invite for this client.
+ */
+app.get("/api/invites", isAuthenticated, async (req, res) => {
+  try {
+    // Only clients should use this endpoint
+    if (req.user.role !== "client") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const projects = await ProjectModel.find({
+      pendingInvites: { $elemMatch: { clientId: req.user.id, status: "pending" } },
+    })
+      .select("_id name createdBy clientUsername")
+      .lean();
+
+    res.json(projects);
+  } catch (err) {
+    console.error("Fetch invites error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * Client accepts or rejects an invite for a project.
+ * - action must be "accept" or "reject"
+ * - On accept: client is added to associatedClients
+ * - Invite status becomes "accepted" or "rejected"
+ */
+app.post("/api/projects/:id/invite/:action", isAuthenticated, async (req, res) => {
+  try {
+    if (req.user.role !== "client") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const { id, action } = req.params;
+
+    if (!["accept", "reject"].includes(action)) {
+      return res.status(400).json({ message: "Invalid action" });
+    }
+
+    const project = await ProjectModel.findById(id);
+    if (!project) {
+      return res.status(404).json({ message: "Project not found" });
+    }
+
+    // Find the pending invite for this client
+    const invite = (project.pendingInvites || []).find(
+      (inv) =>
+        String(inv.clientId) === String(req.user.id) &&
+        inv.status === "pending"
+    );
+
+    if (!invite) {
+      return res.status(400).json({ message: "No pending invite found" });
+    }
+
+    // Update invite status
+    invite.status = action === "accept" ? "accepted" : "rejected";
+
+    // If accepted -> link the client to the project
+    if (action === "accept") {
+      project.associatedClients = project.associatedClients || [];
+      const alreadyLinked = project.associatedClients.some(
+        (cid) => String(cid) === String(req.user.id)
+      );
+      if (!alreadyLinked) {
+        project.associatedClients.push(req.user.id);
+      }
+    }
+
+    project.markModified("pendingInvites");
+    await project.save();
+
+    res.json({ message: `Invite ${invite.status}` });
+  } catch (err) {
+    console.error("Accept/reject invite error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });

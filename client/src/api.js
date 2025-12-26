@@ -106,6 +106,50 @@ export function updateProjectPlan(projectId, { designPlan, notes }) {
   });
 }
 /* =====================================================
+ * Invitations API helpers (Client approval flow)
+ * ===================================================== */
+
+/**
+ * Fetch pending project invites for the logged-in client.
+ * Endpoint: GET /api/invites
+ */
+export function fetchClientInvites() {
+  return apiFetch("/api/invites");
+}
+
+/**
+ * Client accepts an invite for a project.
+ * Endpoint: POST /api/projects/:projectId/invite/accept
+ */
+export function acceptProjectInvite(projectId) {
+  return apiFetch(`/api/projects/${projectId}/invite/accept`, {
+    method: "POST",
+  });
+}
+
+/**
+ * Client rejects an invite for a project.
+ * Endpoint: POST /api/projects/:projectId/invite/reject
+ */
+export function rejectProjectInvite(projectId) {
+  return apiFetch(`/api/projects/${projectId}/invite/reject`, {
+    method: "POST",
+  });
+}
+
+/**
+ * (Optional) Designer re-sends an invite to a client by username.
+ * Endpoint: POST /api/projects/:projectId/invite
+ * Body: { clientUsername }
+ */
+export function inviteClientToProject(projectId, clientUsername) {
+  return apiFetch(`/api/projects/${projectId}/invite`, {
+    method: "POST",
+    body: JSON.stringify({ clientUsername }),
+  });
+}
+
+/* =====================================================
  * Suppliers API helpers
  * ===================================================== */
 

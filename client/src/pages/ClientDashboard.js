@@ -2,7 +2,13 @@
 
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { fetchProjects } from "../api"; // API helper – clean separation from UI
+import {
+  fetchProjects,
+  fetchClientInvites,
+  acceptProjectInvite,
+  rejectProjectInvite,
+} from "../api"; // API helpers
+
 import { logout } from "../utils/logout";
 
 /**
@@ -17,6 +23,8 @@ import { logout } from "../utils/logout";
  */
 export default function ClientDashboard() {
   const [projects, setProjects] = useState([]);
+  const [invites, setInvites] = useState([]);
+  const [invitesLoading, setInvitesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const navigate = useNavigate();
@@ -46,10 +54,60 @@ export default function ClientDashboard() {
     }
   }
 
+  /**
+ * Load all pending invites for the current client.
+ * If a client accepts an invite, the project will appear later in "Your Projects".
+ */
+async function loadInvites() {
+  setInvitesLoading(true);
+  setError("");
+
+  try {
+    const data = await fetchClientInvites();
+    const normalized = Array.isArray(data) ? data : [];
+    setInvites(normalized);
+  } catch (err) {
+    console.error("Failed to load invites:", err);
+    setError(err.message || "Failed to load invites");
+  } finally {
+    setInvitesLoading(false);
+  }
+}
+
   // Load projects once when the component mounts
-  useEffect(() => {
-    loadProjects();
-  }, []);
+useEffect(() => {
+  loadInvites();
+  loadProjects();
+}, []);
+
+/**
+ * Accept an invite and refresh both invites + projects lists.
+ */
+async function handleAccept(projectId) {
+  setError("");
+  try {
+    await acceptProjectInvite(projectId);
+    await loadInvites();
+    await loadProjects();
+  } catch (err) {
+    console.error("Failed to accept invite:", err);
+    setError(err.message || "Failed to accept invite");
+  }
+}
+
+/**
+ * Reject an invite and refresh invites list.
+ */
+async function handleReject(projectId) {
+  setError("");
+  try {
+    await rejectProjectInvite(projectId);
+    await loadInvites();
+  } catch (err) {
+    console.error("Failed to reject invite:", err);
+    setError(err.message || "Failed to reject invite");
+  }
+}
 
   // Simple inline styles (could be moved to CSS later if you want)
   const pageStyle = {
@@ -136,6 +194,54 @@ export default function ClientDashboard() {
             {error}
           </div>
         )}
+        <section>
+          <h2 style={sectionTitleStyle}>Invitations</h2>
+
+          {invitesLoading ? (
+            <p>Loading invites...</p>
+          ) : invites.length === 0 ? (
+            <p>No pending invitations.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table
+                border="1"
+                cellPadding="8"
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 14,
+                  marginBottom: 16,
+                }}
+              >
+                <thead>
+                  <tr>
+                    <th>Project Name</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invites.map((p) => (
+                    <tr key={p._id}>
+                      <td>{p.name}</td>
+                      <td>
+                        <button type="button" onClick={() => handleAccept(p._id)}>
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleReject(p._id)}
+                          style={{ marginLeft: 8 }}
+                        >
+                          Reject
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+       </section>
 
         <section>
           <h2 style={sectionTitleStyle}>Your Projects</h2>

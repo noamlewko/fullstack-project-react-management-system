@@ -181,7 +181,17 @@ export default function ProjectPlanPage() {
     background: "#eee",
     border: "1px solid #ccc",
   };
-
+  const labelStyleBack = { 
+    padding: "8px 16px",
+    borderRadius:"999px",
+    border:"none",
+    cursor:"pointer",
+    fontWeight: 600,
+    backgroundColor: "#f3f3f3",
+    color: "#333333",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+    width:"110px",
+  };
   /* -------------------------------------------------
    * Render
    * ------------------------------------------------- */
@@ -190,9 +200,10 @@ export default function ProjectPlanPage() {
       <h1>Project Plan</h1>
 
       <div style={headerRowStyle}>
-        <Link to={`/project/${projectId}`}>← Back to Project Menu</Link>
-      </div>
-
+        <div style={{display:"flex",justifyContent:"flex-end"}}>
+           <Link to={`/project/${projectId}/menu`} style={labelStyleBack}>Back to Project</Link>
+        </div>
+      </div>    
       {project && (
         <p style={projectInfoStyle}>
           <strong>Project:</strong> {project.name}{" "}
