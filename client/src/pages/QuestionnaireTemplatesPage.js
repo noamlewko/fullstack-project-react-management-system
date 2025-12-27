@@ -1,26 +1,44 @@
 // client/src/pages/QuestionnaireTemplatesPage.js
-
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import DesignerNav from "../components/DesignerNav";
 import {
   fetchQuestionnaireTemplates,
   createQuestionnaireTemplate,
   updateQuestionnaireTemplate,
   deleteQuestionnaireTemplate,
   uploadImage,
+  syncTemplateToProjects,
 } from "../api";
-import { useParams,Link } from "react-router-dom";
-import DesignerNav from "../components/DesignerNav";
 
-
+/**
+ * QuestionnaireTemplatesPage
+ *
+ * Designer-only page to create and manage questionnaire templates.
+ * Templates can later be assigned to projects and synced across projects.
+ *
+ * Sync modes:
+ * - Safe sync: updates ONLY project instances that were not customized inside the project.
+ * - Force sync: resets template-based parts in all projects using the template
+ *   (but keeps client answers + project-only additions).
+ */
 export default function QuestionnaireTemplatesPage() {
-  const { projectId } = useParams();
+  /* =========================================================
+   * State
+   * ========================================================= */
+
+  // Templates list
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Saving covers: create / update / sync
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // If not null -> editing existing template
   const [editingId, setEditingId] = useState(null);
 
+  // Form state for create/edit template
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -28,11 +46,15 @@ export default function QuestionnaireTemplatesPage() {
     questions: [],
   });
 
-  /* ---------- Load all questionnaire templates for the designer ---------- */
+  /* =========================================================
+   * Data loading
+   * ========================================================= */
 
+  // Fetch all templates for the current designer
   async function loadTemplates() {
     setLoading(true);
     setError("");
+
     try {
       const data = await fetchQuestionnaireTemplates();
       setTemplates(Array.isArray(data) ? data : []);
@@ -44,19 +66,37 @@ export default function QuestionnaireTemplatesPage() {
     }
   }
 
+  // Initial load
   useEffect(() => {
     loadTemplates();
   }, []);
 
-  /* ---------- Basic form field changes (title, description, roomType) ---------- */
+  /* =========================================================
+   * Form helpers
+   * ========================================================= */
 
+  // Update basic fields (title / roomType / description)
   function handleBasicChange(e) {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  /* ---------- Questions management ---------- */
+  // Reset form and exit edit mode
+  function resetForm() {
+    setForm({
+      title: "",
+      description: "",
+      roomType: "",
+      questions: [],
+    });
+    setEditingId(null);
+  }
 
+  /* =========================================================
+   * Question helpers (form.questions)
+   * ========================================================= */
+
+  // Add a new empty question
   function addQuestion() {
     setForm((prev) => ({
       ...prev,
@@ -71,6 +111,7 @@ export default function QuestionnaireTemplatesPage() {
     }));
   }
 
+  // Remove a question by index
   function removeQuestion(index) {
     setForm((prev) => ({
       ...prev,
@@ -78,6 +119,7 @@ export default function QuestionnaireTemplatesPage() {
     }));
   }
 
+  // Update a question field (text / multiple)
   function updateQuestionField(index, field, value) {
     setForm((prev) => {
       const questions = [...prev.questions];
@@ -86,61 +128,80 @@ export default function QuestionnaireTemplatesPage() {
     });
   }
 
-  /* ---------- Options management for each question ---------- */
+  /* =========================================================
+   * Option helpers (question.options)
+   * ========================================================= */
 
+  // Add a new empty option to a question
   function addOption(questionIndex) {
     setForm((prev) => {
       const questions = [...prev.questions];
       const q = { ...questions[questionIndex] };
+
       q.options = [...(q.options || []), { text: "", imageUrl: "" }];
       questions[questionIndex] = q;
+
       return { ...prev, questions };
     });
   }
 
+  // Remove an option from a question
   function removeOption(questionIndex, optionIndex) {
     setForm((prev) => {
       const questions = [...prev.questions];
       const q = { ...questions[questionIndex] };
-      q.options = q.options.filter((_, i) => i !== optionIndex);
+
+      q.options = (q.options || []).filter((_, i) => i !== optionIndex);
       questions[questionIndex] = q;
+
       return { ...prev, questions };
     });
   }
 
+  // Update option field (text / imageUrl)
   function updateOptionField(questionIndex, optionIndex, field, value) {
     setForm((prev) => {
       const questions = [...prev.questions];
       const q = { ...questions[questionIndex] };
       const opts = [...(q.options || [])];
-      const opt = { ...opts[optionIndex], [field]: value };
-      opts[optionIndex] = opt;
+
+      opts[optionIndex] = { ...opts[optionIndex], [field]: value };
       q.options = opts;
       questions[questionIndex] = q;
+
       return { ...prev, questions };
     });
   }
 
-  /* ---------- Reset form (clear fields and exit edit mode) ---------- */
+  // Upload an image and save the URL into option.imageUrl
+  async function handleOptionImageUpload(questionIndex, optionIndex, file) {
+    if (!file) return;
 
-  function resetForm() {
-    setForm({
-      title: "",
-      description: "",
-      roomType: "",
-      questions: [],
-    });
-    setEditingId(null);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const { imageUrl } = await uploadImage(formData);
+      updateOptionField(questionIndex, optionIndex, "imageUrl", imageUrl);
+    } catch (err) {
+      console.error("Image upload failed:", err);
+      setError(err.message || "Failed to upload image");
+    }
   }
 
-  /* ---------- Submit (create / update template) ---------- */
+  /* =========================================================
+   * Create / update template
+   * ========================================================= */
 
+  // Submit form -> create or update template
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
     setError("");
 
-    const body = {
+    const payload = {
       title: form.title,
       description: form.description,
       roomType: form.roomType,
@@ -149,11 +210,9 @@ export default function QuestionnaireTemplatesPage() {
 
     try {
       if (editingId) {
-        // Update existing template
-        await updateQuestionnaireTemplate(editingId, body);
+        await updateQuestionnaireTemplate(editingId, payload);
       } else {
-        // Create new template
-        await createQuestionnaireTemplate(body);
+        await createQuestionnaireTemplate(payload);
       }
 
       await loadTemplates();
@@ -166,40 +225,87 @@ export default function QuestionnaireTemplatesPage() {
     }
   }
 
-  /* ---------- Edit / Delete handlers ---------- */
+  /* =========================================================
+   * Sync template to projects
+   * ========================================================= */
 
+  // Sync template changes into all projects using it (safe / force)
+  async function handleSyncTemplate(templateId, mode = "safe") {
+    if (mode === "force") {
+      const ok = window.confirm(
+        "Force sync will reset template-based questions/options in all projects using this template. Continue?"
+      );
+      if (!ok) return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    try {
+      await syncTemplateToProjects(templateId, mode);
+
+      alert(
+        mode === "safe"
+          ? "Safe sync: updated projects that were NOT customized inside the project."
+          : "Force sync: reset template-based parts in projects (client answers + project-only additions were kept)."
+      );
+    } catch (err) {
+      console.error("Failed to sync template:", err);
+      setError(err.message || "Failed to sync template");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* =========================================================
+   * Edit / delete
+   * ========================================================= */
+
+  // Load template into form for editing (keep question/option _id)
   function startEdit(tpl) {
     setEditingId(tpl._id);
+
     setForm({
       title: tpl.title || "",
       description: tpl.description || "",
       roomType: tpl.roomType || "",
-      questions:
-        (tpl.questions || []).map((q) => ({
-          text: q.text || "",
-          multiple: q.multiple !== undefined ? q.multiple : true,
-          options: (q.options || []).map((opt) => ({
-            text: opt.text || "",
-            imageUrl: opt.imageUrl || "",
-          })),
-        })) || [],
+      questions: (tpl.questions || []).map((q) => ({
+        _id: q._id, // important: keep original question id
+        text: q.text || "",
+        multiple: q.multiple !== undefined ? q.multiple : true,
+        options: (q.options || []).map((opt) => ({
+          _id: opt._id, // important: keep original option id
+          text: opt.text || "",
+          imageUrl: opt.imageUrl || "",
+        })),
+      })),
     });
   }
 
+  // Delete template by id
   async function handleDelete(id) {
-    if (!window.confirm("Delete this questionnaire template?")) return;
+    const ok = window.confirm("Delete this questionnaire template?");
+    if (!ok) return;
 
     setError("");
+
     try {
       await deleteQuestionnaireTemplate(id);
       await loadTemplates();
+
+      // If user deleted the template currently being edited, reset form
+      if (String(editingId) === String(id)) {
+        resetForm();
+      }
     } catch (err) {
       console.error("Failed to delete template:", err);
       setError(err.message || "Failed to delete template");
     }
   }
 
-  /* ---------- Layout & basic styling (side nav + main card) ---------- */
+  /* =========================================================
+   * Styles (inline)
+   * ========================================================= */
 
   const pageStyle = {
     minHeight: "100vh",
@@ -208,7 +314,6 @@ export default function QuestionnaireTemplatesPage() {
     justifyContent: "center",
   };
 
-  // Left: navigation, Right: main content
   const layoutStyle = {
     width: "100%",
     maxWidth: 1150,
@@ -232,17 +337,19 @@ export default function QuestionnaireTemplatesPage() {
     alignItems: "baseline",
     marginBottom: 8,
   };
-  const labelStyle = { 
+
+  const linkStyle = {
     padding: "8px 16px",
-    borderRadius:"999px",
-    border:"none",
-    cursor:"pointer",
+    borderRadius: "999px",
+    border: "none",
+    cursor: "pointer",
     fontWeight: 600,
     backgroundColor: "#f3f3f3",
     color: "#333333",
     boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+    textDecoration: "none",
   };
-  
+
   const sectionTitleStyle = {
     fontSize: 18,
     fontWeight: 600,
@@ -250,31 +357,40 @@ export default function QuestionnaireTemplatesPage() {
     marginTop: 24,
   };
 
+  const helperTextStyle = {
+    display: "block",
+    marginBottom: 12,
+    fontWeight: 600,
+    textAlign: "center",
+    color: "#333",
+  };
+
+  /* =========================================================
+   * Render
+   * ========================================================= */
+
   return (
     <div style={pageStyle}>
       <div style={layoutStyle}>
-        {/* Left side navigation – highlight Questionnaires section in pink */}
         <DesignerNav active="questionnaires" />
 
-        {/* Main content card – on the right */}
         <div style={cardStyle}>
           <div style={titleRowStyle}>
             <h1 style={{ fontSize: 30, fontWeight: 700 }}>
               Design Questionnaires
             </h1>
+
             <div style={{ fontSize: 14 }}>
-            <Link to={`/designer`} style={labelStyle}>Back to Dashbord</Link>
+              <Link to="/designer" style={linkStyle}>
+                Back to Dashboard
+              </Link>
             </div>
           </div>
-    color: var(--color-text-main);
-    display: block;
-    margin-bottom: 6px;
-    font-weight: 600;
-    text-align:center;
-          <p style={{ marginBottom: 16 }}>
-            Create questionnaires to understand your client&apos;s style and
+
+          <span style={helperTextStyle}>
+            Build reusable templates to understand your client&apos;s style and
             preferences.
-          </p>
+          </span>
 
           {error && (
             <div
@@ -291,12 +407,10 @@ export default function QuestionnaireTemplatesPage() {
             </div>
           )}
 
-          {/* Create / Edit template form */}
+          {/* Create / Edit form */}
           <section>
             <h2 style={sectionTitleStyle}>
-              {editingId
-                ? "Edit Questionnaire Template"
-                : "Create Questionnaire Template"}
+              {editingId ? "Edit Questionnaire Template" : "Create Questionnaire Template"}
             </h2>
 
             <form onSubmit={handleSubmit}>
@@ -348,7 +462,7 @@ export default function QuestionnaireTemplatesPage() {
                 </label>
               </div>
 
-              {/* Questions list */}
+              {/* Questions */}
               <div style={{ marginTop: 20 }}>
                 <div
                   style={{
@@ -358,7 +472,7 @@ export default function QuestionnaireTemplatesPage() {
                   }}
                 >
                   <h3 style={{ margin: 0 }}>Questions</h3>
-                  <button type="button" onClick={addQuestion}>
+                  <button type="button" onClick={addQuestion} disabled={saving}>
                     + Add Question
                   </button>
                 </div>
@@ -371,7 +485,7 @@ export default function QuestionnaireTemplatesPage() {
 
                 {form.questions.map((q, qIndex) => (
                   <div
-                    key={qIndex}
+                    key={q._id || qIndex}
                     style={{
                       border: "1px solid #ddd",
                       borderRadius: 10,
@@ -379,16 +493,13 @@ export default function QuestionnaireTemplatesPage() {
                       marginTop: 10,
                     }}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                      }}
-                    >
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <strong>Question #{qIndex + 1}</strong>
+
                       <button
                         type="button"
                         onClick={() => removeQuestion(qIndex)}
+                        disabled={saving}
                         style={{ fontSize: 12 }}
                       >
                         Remove
@@ -402,13 +513,7 @@ export default function QuestionnaireTemplatesPage() {
                         <input
                           type="text"
                           value={q.text}
-                          onChange={(e) =>
-                            updateQuestionField(
-                              qIndex,
-                              "text",
-                              e.target.value
-                            )
-                          }
+                          onChange={(e) => updateQuestionField(qIndex, "text", e.target.value)}
                           required
                           style={{ width: "100%" }}
                         />
@@ -419,20 +524,14 @@ export default function QuestionnaireTemplatesPage() {
                       <label>
                         <input
                           type="checkbox"
-                          checked={q.multiple}
-                          onChange={(e) =>
-                            updateQuestionField(
-                              qIndex,
-                              "multiple",
-                              e.target.checked
-                            )
-                          }
+                          checked={!!q.multiple}
+                          onChange={(e) => updateQuestionField(qIndex, "multiple", e.target.checked)}
                         />{" "}
                         Allow multiple selections
                       </label>
                     </div>
 
-                    {/* Options for this question */}
+                    {/* Options */}
                     <div style={{ marginTop: 10 }}>
                       <div
                         style={{
@@ -445,6 +544,7 @@ export default function QuestionnaireTemplatesPage() {
                         <button
                           type="button"
                           onClick={() => addOption(qIndex)}
+                          disabled={saving}
                           style={{ fontSize: 12 }}
                         >
                           + Add Option
@@ -452,23 +552,17 @@ export default function QuestionnaireTemplatesPage() {
                       </div>
 
                       {(q.options || []).length === 0 && (
-                        <p
-                          style={{
-                            fontSize: 13,
-                            color: "#777",
-                            marginTop: 4,
-                          }}
-                        >
+                        <p style={{ fontSize: 13, color: "#777", marginTop: 4 }}>
                           No options yet.
                         </p>
                       )}
 
                       {(q.options || []).map((opt, optIndex) => (
                         <div
-                          key={optIndex}
+                          key={opt._id || optIndex}
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "2fr 2fr auto",
+                            gridTemplateColumns: "2fr 2fr auto auto auto",
                             gap: 6,
                             alignItems: "center",
                             marginTop: 6,
@@ -479,56 +573,39 @@ export default function QuestionnaireTemplatesPage() {
                             placeholder="Option text"
                             value={opt.text}
                             onChange={(e) =>
-                              updateOptionField(
-                                qIndex,
-                                optIndex,
-                                "text",
-                                e.target.value
-                              )
+                              updateOptionField(qIndex, optIndex, "text", e.target.value)
                             }
                           />
+
                           <input
                             type="text"
                             placeholder="Image URL (optional)"
                             value={opt.imageUrl}
                             onChange={(e) =>
-                              updateOptionField(
-                                qIndex,
-                                optIndex,
-                                "imageUrl",
-                                e.target.value
-                              )
+                              updateOptionField(qIndex, optIndex, "imageUrl", e.target.value)
                             }
                           />
-                          <input 
+
+                          <input
                             type="file"
                             accept="image/*"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-
-                              try {
-                                const formData = new FormData();
-                                formData.append("image", file);
-
-                                const { imageUrl } = await uploadImage(formData);
-
-                                updateOptionField(qIndex, optIndex, "imageUrl", imageUrl);
-                              } catch (err) {
-                                setError(err.message || "Failed to upload image");
-                              }
-                            }}
+                            onChange={(e) =>
+                              handleOptionImageUpload(qIndex, optIndex, e.target.files?.[0])
+                            }
                           />
-                          <button type="button" onClick={() => updateOptionField(qIndex, optIndex, "imageUrl", "")}>
-                            Clear
-                          </button>
-
 
                           <button
                             type="button"
-                            onClick={() =>
-                              removeOption(qIndex, optIndex)
-                            }
+                            onClick={() => updateOptionField(qIndex, optIndex, "imageUrl", "")}
+                            disabled={saving}
+                          >
+                            Clear
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => removeOption(qIndex, optIndex)}
+                            disabled={saving}
                             style={{ fontSize: 11 }}
                           >
                             X
@@ -540,7 +617,8 @@ export default function QuestionnaireTemplatesPage() {
                 ))}
               </div>
 
-              <div style={{ marginTop: 18 }}>
+              {/* Form actions */}
+              <div style={{ marginTop: 18, display: "flex", gap: 8 }}>
                 <button type="submit" disabled={saving}>
                   {saving
                     ? editingId
@@ -550,12 +628,9 @@ export default function QuestionnaireTemplatesPage() {
                     ? "Save Changes"
                     : "Create Template"}
                 </button>
+
                 {editingId && (
-                  <button
-                    type="button"
-                    style={{ marginLeft: 8 }}
-                    onClick={resetForm}
-                  >
+                  <button type="button" onClick={resetForm} disabled={saving}>
                     Cancel
                   </button>
                 )}
@@ -563,9 +638,10 @@ export default function QuestionnaireTemplatesPage() {
             </form>
           </section>
 
-          {/* Templates list */}
+          {/* Templates table */}
           <section>
             <h2 style={sectionTitleStyle}>Your Templates</h2>
+
             {loading ? (
               <p>Loading templates...</p>
             ) : templates.length === 0 ? (
@@ -588,6 +664,7 @@ export default function QuestionnaireTemplatesPage() {
                     <th>Actions</th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {templates.map((tpl) => (
                     <tr key={tpl._id}>
@@ -595,14 +672,32 @@ export default function QuestionnaireTemplatesPage() {
                       <td>{tpl.roomType || "—"}</td>
                       <td>{(tpl.questions || []).length}</td>
                       <td>
-                        <button onClick={() => startEdit(tpl)}>
+                        <button onClick={() => startEdit(tpl)} disabled={saving}>
                           Edit
                         </button>
+
                         <button
                           style={{ marginLeft: 8 }}
                           onClick={() => handleDelete(tpl._id)}
+                          disabled={saving}
                         >
                           Delete
+                        </button>
+
+                        <button
+                          style={{ marginLeft: 8 }}
+                          onClick={() => handleSyncTemplate(tpl._id, "safe")}
+                          disabled={saving}
+                        >
+                          Sync to non-customized projects
+                        </button>
+
+                        <button
+                          style={{ marginLeft: 8 }}
+                          onClick={() => handleSyncTemplate(tpl._id, "force")}
+                          disabled={saving}
+                        >
+                          Force sync (reset template parts)
                         </button>
                       </td>
                     </tr>

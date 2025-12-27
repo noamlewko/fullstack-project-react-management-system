@@ -1,32 +1,46 @@
 // models/QuestionnaireTemplate.js
 const mongoose = require("mongoose");
 
-// אפשרות אחת בתוך שאלה (עם תמונה)
-const QuestionOptionSchema = new mongoose.Schema({
-  text: { type: String, required: true },      // למשל: "Modern", "Boho"
-  imageUrl: { type: String, default: "" },     // URL לתמונה שהמעצבת מעלה
-});
+/**
+ * QuestionnaireTemplate model
+ *
+ * Reusable questionnaire built by the designer.
+ * Stored as:
+ * - title/description/roomType
+ * - questions[] -> options[] (each option may have an imageUrl)
+ */
 
-// שאלה בתוך שאלון
-const QuestionSchema = new mongoose.Schema({
-  text: { type: String, required: true },      // טקסט השאלה, למשל: "מה הסגנון שאת הכי אוהבת?"
-  multiple: { type: Boolean, default: true },  // האם אפשר לסמן כמה אופציות או רק אחת
-  options: [QuestionOptionSchema],
-});
+/** One option inside a question */
+const QuestionOptionSchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true, trim: true },
+    imageUrl: { type: String, default: "" },
+  },
+  { _id: true }
+);
 
-// תבנית שאלון (שהמעצבת בונה פעם אחת)
+/** One question inside a template */
+const QuestionSchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true, trim: true },
+    multiple: { type: Boolean, default: true },
+    options: { type: [QuestionOptionSchema], default: [] },
+  },
+  { _id: true }
+);
+
+/** The template itself */
 const QuestionnaireTemplateSchema = new mongoose.Schema(
   {
-    title: { type: String, required: true },   // "שאלון סלון", "שאלון כללי"
-    description: String,
-    roomType: String,                          // "Living Room", "Bedroom", "General" וכו'
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // מי המעצבת
-    questions: [QuestionSchema],
+    title: { type: String, required: true, trim: true },
+    description: { type: String, default: "" },
+    roomType: { type: String, default: "" },
+
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+
+    questions: { type: [QuestionSchema], default: [] },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model(
-  "QuestionnaireTemplate",
-  QuestionnaireTemplateSchema
-);
+module.exports = mongoose.model("QuestionnaireTemplate", QuestionnaireTemplateSchema);

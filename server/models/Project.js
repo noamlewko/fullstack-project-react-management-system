@@ -1,157 +1,205 @@
 // models/Project.js
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-/* ---------- Workers & Suppliers ---------- */
+/**
+ * Project model
+ *
+ * Holds all project data: workers, suppliers, plan/notes, color selections,
+ * client linking (invites), and project-level questionnaire instances + answers.
+ */
+
+/* =========================================================
+ * Sub-docs: Workers & Suppliers
+ * ========================================================= */
 
 const WorkerSchema = new mongoose.Schema(
   {
-    workerName: String,
-    role: String,
-    phone: String,
-    cost: Number,
-    description: String,
+    workerName: { type: String, default: "" },
+    role: { type: String, default: "" },
+    phone: { type: String, default: "" },
+    cost: { type: Number, default: 0 },
+    description: { type: String, default: "" },
   },
   { _id: true }
 );
 
 const SupplierSchema = new mongoose.Schema(
   {
-    storeName: String,
-    supplierName: String,
-    product: String,
+    storeName: { type: String, default: "" },
+    supplierName: { type: String, default: "" },
+    product: { type: String, default: "" },
     price: { type: Number, default: 0 },
-    contactName: String,
-    phone: String,
+    contactName: { type: String, default: "" },
+    phone: { type: String, default: "" },
   },
   { _id: true }
 );
 
-/* ---------- Questionnaire answers (NEW STRUCTURE) ---------- */
+/* =========================================================
+ * Sub-docs: Questionnaire Answers (saved per project instance)
+ * ========================================================= */
+
 /**
- * תשובה לשאלה אחת בשאלון של הפרויקט
+ * Single question answer inside a project questionnaire instance.
+ * We store IDs as strings because we support mapping between template IDs
+ * and project-instance IDs (stable UI keys).
  */
 const QuestionnaireAnswerSchema = new mongoose.Schema(
   {
-    questionId: {
-      type: String,
-      required: true,
-    },
-    questionText: {
-      type: String,
-      default: '',
-    },
+    questionId: { type: String, required: true },
+    questionText: { type: String, default: "" },
+
     selectedOptions: [
       {
-        optionId: { type: String, default: '' },
-        name: { type: String, default: '' },
-        imageUrl: { type: String, default: '' },
+        optionId: { type: String, default: "" },
+        name: { type: String, default: "" },
+        imageUrl: { type: String, default: "" },
       },
     ],
-    freeText: {
-      type: String,
-      default: '',
-    },
+
+    freeText: { type: String, default: "" },
   },
   { _id: false }
 );
 
-/* ---------- Questionnaire instance on a project ---------- */
+/* =========================================================
+ * Sub-docs: Project Questionnaire Instance
+ * ========================================================= */
 
+/**
+ * A template "snapshot" stored inside a project.
+ * - templateId: the original template reference
+ * - questions/options: copied so project can be customized
+ * - answers: saved per project
+ * - isCustomized: used to decide if safe-sync should skip it
+ */
 const ProjectQuestionnaireSchema = new mongoose.Schema(
   {
     templateId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'QuestionnaireTemplate',
+      ref: "QuestionnaireTemplate",
       required: true,
     },
-    title: String,
-    description: String,
-    roomType: String,
 
-    // צילום של השאלות מהתבנית בזמן ה-assign
+    title: { type: String, default: "" },
+    description: { type: String, default: "" },
+    roomType: { type: String, default: "" },
+
+    syncedAt: { type: Date, default: null },
+    isCustomized: { type: Boolean, default: false },
+
     questions: [
       {
-        text: String,
+        // Exists only if this question originally came from the template
+        sourceQuestionId: {
+          type: mongoose.Schema.Types.ObjectId,
+          required: false,
+        },
+
+        text: { type: String, default: "" },
         multiple: { type: Boolean, default: true },
+
         options: [
           {
-            text: String,
-            imageUrl: String,
+            // Exists only if this option originally came from the template
+            sourceOptionId: {
+              type: mongoose.Schema.Types.ObjectId,
+              required: false,
+            },
+
+            text: { type: String, default: "" },
+            imageUrl: { type: String, default: "" },
           },
         ],
       },
     ],
 
-    // תשובות הלקוח בפורמט החדש
-    answers: [QuestionnaireAnswerSchema],
+    answers: { type: [QuestionnaireAnswerSchema], default: [] },
   },
   { _id: true }
 );
 
-/* ---------- Color & Material selections ---------- */
+/* =========================================================
+ * Sub-docs: Color & Material Selections
+ * ========================================================= */
 
 const ColorSelectionSchema = new mongoose.Schema(
   {
-    roomName: { type: String, required: true }, // "Living room", "Bedroom" וכו'
-    wallColor: { type: String, default: '' },   // "#ffffff"
-    furnitureColor: { type: String, default: '' },
-    floorColor: { type: String, default: '' },
-    materialType: { type: String, default: '' }, // "wood" / "metal" וכו'
-    finishType: { type: String, default: '' },   // "matte" / "glossy" / "satin"
+    roomName: { type: String, required: true },
+    wallColor: { type: String, default: "" },
+    furnitureColor: { type: String, default: "" },
+    floorColor: { type: String, default: "" },
+    materialType: { type: String, default: "" },
+    finishType: { type: String, default: "" },
   },
   { _id: false }
 );
 
-/* ---------- Project ---------- */
+/* =========================================================
+ * Project Schema
+ * ========================================================= */
 
 const ProjectSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    startDate: Date,
-    endDate: Date,
-    budget: Number,
+    startDate: { type: Date, default: null },
+    endDate: { type: Date, default: null },
+    budget: { type: Number, default: 0 },
+
     clientUsername: { type: String, required: true },
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
-    
-// Pending invitations: client must approve before being linked to the project
-pendingInvites: [
-  {
-    clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true }, // designer
-    status: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
-    createdAt: { type: Date, default: Date.now },
-  },
-],
 
+    /**
+     * Invitation flow:
+     * - Designers create a project and invite a client.
+     * - Client must accept before being added to associatedClients.
+     */
+    pendingInvites: [
+      {
+        clientId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        invitedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        status: {
+          type: String,
+          enum: ["pending", "accepted", "rejected"],
+          default: "pending",
+        },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
 
     associatedClients: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
+        ref: "User",
       },
     ],
 
-    workers: [WorkerSchema],
-    suppliers: [SupplierSchema],
+    workers: { type: [WorkerSchema], default: [] },
+    suppliers: { type: [SupplierSchema], default: [] },
 
-    designPlan: { type: String, default: '' },
-    notes: { type: String, default: '' },
+    designPlan: { type: String, default: "" },
+    notes: { type: String, default: "" },
 
-    // שאלונים לפרויקט
-    designQuestionnaires: [ProjectQuestionnaireSchema],
+    // Project questionnaire instances (template snapshots + project-only edits)
+    designQuestionnaires: { type: [ProjectQuestionnaireSchema], default: [] },
 
-    // ✅ בחירות צבעים וחומרים לכל חדר בפרויקט
-    colorSelections: {
-      type: [ColorSelectionSchema],
-      default: [],
-    },
+    // Color/material preferences per room
+    colorSelections: { type: [ColorSelectionSchema], default: [] },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Project', ProjectSchema);
+module.exports = mongoose.model("Project", ProjectSchema);

@@ -1,80 +1,129 @@
 // src/pages/ProjectQuestionnairesPage.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { apiFetch } from "../api";
+import {
+  apiFetch,
+  uploadImage,
+  updateProjectQuestionnaireInstance,
+} from "../api";
 
+/**
+ * ProjectQuestionnairesPage
+ *
+ * Client: Fill and save answers for the project's questionnaire.
+ * Designer: Assign templates + create a "project-only" customized version (questions/options).
+ *
+ * Key idea:
+ * - Answers are stored by sourceQuestionId/sourceOptionId when available (stable across sync).
+ * - Project-only edits do NOT affect the template or other projects.
+ */
 export default function ProjectQuestionnairesPage() {
   const { projectId } = useParams();
   const role = localStorage.getItem("role") || "client";
+  const isDesigner = role === "designer";
 
+  // Full project document loaded from backend
   const [project, setProject] = useState(null);
 
-  // כל תבניות השאלון שהמעצבת יצרה במערכת (לשימוש המעצבת בלבד)
+  // Designer-only: list of all templates
   const [templates, setTemplates] = useState([]);
 
-  // תבנית שנבחרה ע"י המעצבת להוספה/עדכון לפרויקט
+  // Designer-only: selected template to assign/update in this project
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
-  // איזה instance של שאלון משויך לפרויקט כרגע מוצג (id של השאלון בפרויקט)
+  // Currently selected questionnaire instance id inside the project
   const [selectedInstanceId, setSelectedInstanceId] = useState("");
 
-  // התשובות שהמשתמש ממלא כרגע בטופס על המסך
-  // { [questionId]: { selectedOptions: [optionId, ...], freeText: "" } }
+  // Answers state:
+  // { [questionKey]: { selectedOptions: [optionKey...], freeText: "" } }
   const [answers, setAnswers] = useState({});
 
+  // UI state
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // Modal image preview
   const [modalImage, setModalImage] = useState(null);
 
-  // -------------------------------------------------
-  // טעינת פרויקט + תבניות (אם מעצבת)
-  // -------------------------------------------------
-  useEffect(() => {
-    async function loadAll() {
-      setLoading(true);
-      setError("");
+  // Designer-only: project-only edit mode (draft)
+  const [editingInstance, setEditingInstance] = useState(false);
+  const [draftQuestions, setDraftQuestions] = useState([]);
 
-      try {
-        // 1. נטען את הפרויקט + השאלונים שכבר משויכים אליו
-        const proj = await apiFetch(`/api/projects/${projectId}`);
-        setProject(proj);
+  /* =========================================================
+   * Helpers (stable keys + deep copy)
+   * ========================================================= */
 
-        const assigned = Array.isArray(proj.designQuestionnaires)
-          ? proj.designQuestionnaires
-          : [];
+  // Return stable question key (prefer sourceQuestionId if exists)
+  function getQuestionKey(q) {
+    return String(q?.sourceQuestionId || q?._id || "");
+  }
 
-        // אם יש כבר שאלונים משויכים – נתחיל מהראשון
-        if (assigned.length > 0) {
-          setSelectedInstanceId(String(assigned[0]._id));
-          loadAnswersFromInstance(assigned[0]);
-        } else {
-          setSelectedInstanceId("");
-          setAnswers({});
+  // Return stable option key (prefer sourceOptionId if exists)
+  function getOptionKey(opt) {
+    return String(opt?.sourceOptionId || opt?._id || "");
+  }
+
+  // Simple deep copy for safe draft editing
+  function deepCopy(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  /* =========================================================
+   * Loaders
+   * ========================================================= */
+
+  // Load project + initialize selected instance + answers; load templates if designer
+  async function loadAll() {
+    if (!projectId) return;
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const proj = await apiFetch(`/api/projects/${projectId}`);
+      setProject(proj);
+
+      const assigned = Array.isArray(proj.designQuestionnaires)
+        ? proj.designQuestionnaires
+        : [];
+
+      if (assigned.length > 0) {
+        setSelectedInstanceId(String(assigned[0]._id));
+        loadAnswersFromInstance(assigned[0]);
+
+        if (isDesigner) {
+          setDraftQuestions(deepCopy(assigned[0].questions || []));
         }
-
-        // 2. אם המשתמשת היא מעצבת – נטען את רשימת כל התבניות שלה
-        if (role === "designer") {
-          const tpls = await apiFetch("/api/questionnaires/templates");
-          setTemplates(Array.isArray(tpls) ? tpls : []);
-        }
-      } catch (err) {
-        console.error("Error loading questionnaire page:", err);
-        setError(err.message || "Failed to load questionnaire");
-      } finally {
-        setLoading(false);
+      } else {
+        setSelectedInstanceId("");
+        setAnswers({});
+        if (isDesigner) setDraftQuestions([]);
       }
-    }
 
-    if (projectId) {
-      loadAll();
+      if (isDesigner) {
+        const tpls = await apiFetch("/api/questionnaires/templates");
+        setTemplates(Array.isArray(tpls) ? tpls : []);
+      }
+    } catch (err) {
+      console.error("Error loading questionnaire page:", err);
+      setError(err.message || "Failed to load questionnaire");
+    } finally {
+      setLoading(false);
     }
+  }
+
+  // Run loader on mount / projectId change / role change
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, role]);
 
-  // -------------------------------------------------
-  // טעינת תשובות instance קיים לתוך ה־state
-  // -------------------------------------------------
+  /* =========================================================
+   * Answers mapping
+   * ========================================================= */
+
+  // Convert instance.answers array to UI state map keyed by sourceQuestionId (preferred)
   function loadAnswersFromInstance(instance) {
     if (!instance || !Array.isArray(instance.answers)) {
       setAnswers({});
@@ -82,11 +131,19 @@ export default function ProjectQuestionnairesPage() {
     }
 
     const map = {};
-    instance.answers.forEach((a) => {
-      const qId = String(a.questionId || "");
-      if (!qId) return;
 
-      map[qId] = {
+    instance.answers.forEach((a) => {
+      const savedQId = String(a.questionId || "");
+      if (!savedQId) return;
+
+      // If saved by project _id previously, translate to sourceQuestionId
+      const qInInstance = (instance.questions || []).find(
+        (q) => String(q._id) === savedQId
+      );
+
+      const finalQKey = String(qInInstance?.sourceQuestionId || savedQId);
+
+      map[finalQKey] = {
         selectedOptions: Array.isArray(a.selectedOptions)
           ? a.selectedOptions.map((opt) => String(opt.optionId))
           : [],
@@ -97,35 +154,40 @@ export default function ProjectQuestionnairesPage() {
     setAnswers(map);
   }
 
-  // -------------------------------------------------
-  // בחירת איזה שאלון משויך יוצג כרגע (instance מתוך הפרויקט)
-  // -------------------------------------------------
+  /* =========================================================
+   * Instance selection + template assignment (Designer)
+   * ========================================================= */
+
+  // Switch currently displayed questionnaire instance inside the project
   function handleSelectedInstanceChange(e) {
     const newInstanceId = e.target.value;
     setSelectedInstanceId(newInstanceId);
 
-    if (!project || !Array.isArray(project.designQuestionnaires)) {
-      setAnswers({});
-      return;
-    }
+    const instances = Array.isArray(project?.designQuestionnaires)
+      ? project.designQuestionnaires
+      : [];
 
-    const instance = project.designQuestionnaires.find(
+    const instance = instances.find(
       (q) => String(q._id) === String(newInstanceId)
     );
 
     loadAnswersFromInstance(instance);
+
+    if (isDesigner && instance) {
+      setDraftQuestions(deepCopy(instance.questions || []));
+      setEditingInstance(false);
+    }
   }
 
-  // -------------------------------------------------
-  // בחירת תבנית ע"י המעצבת (כשמוסיפים/מעדכנים לפרויקט)
-  // -------------------------------------------------
+  // Store the designer-selected template id
   function handleDesignerTemplateSelect(e) {
     setSelectedTemplateId(e.target.value);
   }
 
-  // המעצבת משייכת / מעדכנת תבנית לפרויקט
+  // Assign/update selected template inside this project (Designer)
   async function handleAssignTemplate() {
     if (!selectedTemplateId) return;
+
     setSaving(true);
     setError("");
 
@@ -145,7 +207,6 @@ export default function ProjectQuestionnairesPage() {
         ? updatedProject.designQuestionnaires
         : [];
 
-      // נמצא את ה-instance של התבנית ששויכה/עודכנה עכשיו
       const instance = assigned.find(
         (q) => String(q.templateId) === String(selectedTemplateId)
       );
@@ -153,6 +214,7 @@ export default function ProjectQuestionnairesPage() {
       if (instance) {
         setSelectedInstanceId(String(instance._id));
         loadAnswersFromInstance(instance);
+        if (isDesigner) setDraftQuestions(deepCopy(instance.questions || []));
       }
     } catch (err) {
       console.error("Error assigning template:", err);
@@ -162,44 +224,14 @@ export default function ProjectQuestionnairesPage() {
     }
   }
 
-  // מחיקת כל השאלונים מהפרויקט (אם תרצי כפתור לזה)
-  async function handleClearAllQuestionnaires() {
-    if (!projectId) return;
-    setSaving(true);
-    setError("");
-
-    try {
-      const res = await apiFetch(
-        `/api/projects/${projectId}/questionnaire/assign`,
-        {
-          method: "POST",
-          body: JSON.stringify({ templateId: "" }), // שולחים ריק
-        }
-      );
-
-      const updatedProject = res.project || res;
-      setProject(updatedProject);
-      setSelectedInstanceId("");
-      setAnswers({});
-    } catch (err) {
-      console.error("Error clearing questionnaires:", err);
-      setError(err.message || "Failed to clear questionnaire");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // מחיקת השאלון הנוכחי בלבד מהפרויקט
+  // Remove current questionnaire instance from project (Designer)
   async function handleRemoveCurrentQuestionnaire() {
     if (!projectId || !selectedInstanceId) return;
 
-    if (
-      !window.confirm(
-        "Remove this questionnaire from this project? (Client will no longer see it.)"
-      )
-    ) {
-      return;
-    }
+    const ok = window.confirm(
+      "Remove this questionnaire from this project? Clients will no longer see it."
+    );
+    if (!ok) return;
 
     setSaving(true);
     setError("");
@@ -207,9 +239,7 @@ export default function ProjectQuestionnairesPage() {
     try {
       const res = await apiFetch(
         `/api/projects/${projectId}/questionnaires/${selectedInstanceId}`,
-        {
-          method: "DELETE",
-        }
+        { method: "DELETE" }
       );
 
       const updatedProject = res.project || res;
@@ -222,10 +252,12 @@ export default function ProjectQuestionnairesPage() {
       if (instances.length === 0) {
         setSelectedInstanceId("");
         setAnswers({});
+        if (isDesigner) setDraftQuestions([]);
       } else {
         const first = instances[0];
         setSelectedInstanceId(String(first._id));
         loadAnswersFromInstance(first);
+        if (isDesigner) setDraftQuestions(deepCopy(first.questions || []));
       }
     } catch (err) {
       console.error("Error removing questionnaire:", err);
@@ -235,63 +267,57 @@ export default function ProjectQuestionnairesPage() {
     }
   }
 
-  // -------------------------------------------------
-  // עבודה עם תשובות ב־state
-  // -------------------------------------------------
-  function toggleOption(questionId, optionId, multiple) {
+  /* =========================================================
+   * Answer editing (Client + Designer)
+   * ========================================================= */
+
+  // Toggle an option for a question (single or multi)
+  function toggleOption(questionKey, optionKey, multiple) {
     setAnswers((prev) => {
-      const key = String(questionId);
+      const key = String(questionKey);
       const existing = prev[key] || { selectedOptions: [], freeText: "" };
       let selected = [...existing.selectedOptions];
 
       if (multiple) {
-        if (selected.includes(optionId)) {
-          selected = selected.filter((id) => id !== optionId);
+        if (selected.includes(optionKey)) {
+          selected = selected.filter((id) => id !== optionKey);
         } else {
-          selected.push(optionId);
+          selected.push(optionKey);
         }
       } else {
-        if (selected.includes(optionId)) {
-          selected = [];
-        } else {
-          selected = [optionId];
-        }
+        selected = selected.includes(optionKey) ? [] : [optionKey];
       }
 
-      return {
-        ...prev,
-        [key]: { ...existing, selectedOptions: selected },
-      };
+      return { ...prev, [key]: { ...existing, selectedOptions: selected } };
     });
   }
 
-  function handleFreeTextChange(questionId, value) {
+  // Update free text for a question
+  function handleFreeTextChange(questionKey, value) {
     setAnswers((prev) => {
-      const key = String(questionId);
+      const key = String(questionKey);
       const existing = prev[key] || { selectedOptions: [], freeText: "" };
-      return {
-        ...prev,
-        [key]: { ...existing, freeText: value },
-      };
+      return { ...prev, [key]: { ...existing, freeText: value } };
     });
   }
 
-  // -------------------------------------------------
-  // שמירת כל התשובות לשרת
-  // -------------------------------------------------
-  async function saveAll() {
+  /* =========================================================
+   * Save answers (backend)
+   * ========================================================= */
+
+  // Save current answers into backend (uses stable source ids)
+  async function saveAllAnswers() {
     if (!project || !selectedInstanceId) return;
 
     setSaving(true);
     setError("");
 
     try {
-      const assigned = Array.isArray(project.designQuestionnaires)
+      const instances = Array.isArray(project.designQuestionnaires)
         ? project.designQuestionnaires
         : [];
 
-      // instance הנוכחי לפי ה־_id שלו
-      const instance = assigned.find(
+      const instance = instances.find(
         (q) => String(q._id) === String(selectedInstanceId)
       );
 
@@ -301,26 +327,19 @@ export default function ProjectQuestionnairesPage() {
         return;
       }
 
-      const questions = Array.isArray(instance.questions)
-        ? instance.questions
-        : [];
+      const questions = Array.isArray(instance.questions) ? instance.questions : [];
 
       const payloadAnswers = questions.map((q) => {
-        const key = String(q._id);
-        const entry = answers[key] || {
-          selectedOptions: [],
-          freeText: "",
-        };
+        const qKey = getQuestionKey(q);
+        const entry = answers[qKey] || { selectedOptions: [], freeText: "" };
 
         return {
-          questionId: q._id,
+          questionId: qKey,
           questionText: q.text,
           selectedOptions: (q.options || [])
-            .filter((opt) =>
-              entry.selectedOptions.includes(String(opt._id))
-            )
+            .filter((opt) => entry.selectedOptions.includes(getOptionKey(opt)))
             .map((opt) => ({
-              optionId: opt._id,
+              optionId: getOptionKey(opt),
               name: opt.text,
               imageUrl: opt.imageUrl || "",
             })),
@@ -328,21 +347,18 @@ export default function ProjectQuestionnairesPage() {
         };
       });
 
-      const res = await apiFetch(
-        `/api/projects/${projectId}/questionnaire/answers`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            templateId: instance.templateId, // חשוב – השרת משתמש בזה כדי לעדכן את ה-instance הנכון
-            answers: payloadAnswers,
-          }),
-        }
-      );
+      const res = await apiFetch(`/api/projects/${projectId}/questionnaire/answers`, {
+        method: "POST",
+        body: JSON.stringify({
+          templateId: String(instance.templateId),
+          answers: payloadAnswers,
+        }),
+      });
 
       const updatedProject = res.project || res;
       setProject(updatedProject);
 
-      // נטען מחדש את התשובות העדכניות מהשרת
+      // Reload answers from backend version to keep UI in sync
       const updatedInstance = (updatedProject.designQuestionnaires || []).find(
         (q) => String(q._id) === String(selectedInstanceId)
       );
@@ -350,24 +366,173 @@ export default function ProjectQuestionnairesPage() {
         loadAnswersFromInstance(updatedInstance);
       }
     } catch (err) {
-      console.error("Error saving questionnaire:", err);
-      setError(err.message || "Failed to save questionnaire");
+      console.error("Error saving questionnaire answers:", err);
+      setError(err.message || "Failed to save answers");
     } finally {
       setSaving(false);
     }
   }
 
-  // -------------------------------------------------
-  // עזר להצגת השאלון הנוכחי על המסך
-  // -------------------------------------------------
-  const assignedInstances = Array.isArray(project?.designQuestionnaires)
-    ? project.designQuestionnaires
-    : [];
+  /* =========================================================
+   * Project-only edits (Designer)
+   * ========================================================= */
 
-  const currentInstance =
-    assignedInstances.find(
-      (q) => String(q._id) === String(selectedInstanceId)
-    ) || assignedInstances[0] || null;
+  // Toggle edit mode for project-only version (Designer)
+  function toggleProjectEditMode() {
+    if (!isDesigner || !currentInstance) return;
+
+    if (!editingInstance) {
+      setDraftQuestions(deepCopy(currentInstance.questions || []));
+      setEditingInstance(true);
+      return;
+    }
+
+    const ok = window.confirm(
+      "Discard project-only changes? Your unsaved edits will be lost."
+    );
+    if (ok) setEditingInstance(false);
+  }
+
+  // Save draftQuestions as the project-only questionnaire version (Designer)
+  async function saveProjectVersion() {
+    if (!projectId || !selectedInstanceId) return;
+
+    setSaving(true);
+    setError("");
+
+    try {
+      const res = await updateProjectQuestionnaireInstance(
+        projectId,
+        selectedInstanceId,
+        { questions: draftQuestions }
+      );
+
+      const updatedProject = res.project || res;
+      setProject(updatedProject);
+
+      const updatedInstance = (updatedProject.designQuestionnaires || []).find(
+        (q) => String(q._id) === String(selectedInstanceId)
+      );
+
+      if (updatedInstance) {
+        // Keep answers UI aligned after question edits
+        loadAnswersFromInstance(updatedInstance);
+        setDraftQuestions(deepCopy(updatedInstance.questions || []));
+      }
+
+      setEditingInstance(false);
+    } catch (err) {
+      console.error("Failed to save project version:", err);
+      setError(err.message || "Failed to save project version");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* =========================================================
+   * Draft editing helpers (Designer)
+   * ========================================================= */
+
+  // Update draft question text (project-only)
+  function updateDraftQuestionText(qIndex, value) {
+    setDraftQuestions((prev) => {
+      const copy = deepCopy(prev);
+      copy[qIndex].text = value;
+      return copy;
+    });
+  }
+
+  // Update draft option text (project-only)
+  function updateDraftOptionText(qIndex, optIndex, value) {
+    setDraftQuestions((prev) => {
+      const copy = deepCopy(prev);
+      copy[qIndex].options[optIndex].text = value;
+      return copy;
+    });
+  }
+
+  // Update draft option imageUrl (project-only)
+  function updateDraftOptionImageUrl(qIndex, optIndex, value) {
+    setDraftQuestions((prev) => {
+      const copy = deepCopy(prev);
+      copy[qIndex].options[optIndex].imageUrl = value;
+      return copy;
+    });
+  }
+
+  // Add a new draft question (project-only)
+  function addDraftQuestion() {
+    setDraftQuestions((prev) => [...prev, { text: "", multiple: true, options: [] }]);
+  }
+
+  // Remove a draft question (project-only)
+  function removeDraftQuestion(qIndex) {
+    setDraftQuestions((prev) => prev.filter((_, i) => i !== qIndex));
+  }
+
+  // Add a new draft option to a draft question (project-only)
+  function addDraftOption(qIndex) {
+    setDraftQuestions((prev) => {
+      const copy = deepCopy(prev);
+      copy[qIndex].options = copy[qIndex].options || [];
+      copy[qIndex].options.push({ text: "", imageUrl: "" });
+      return copy;
+    });
+  }
+
+  // Remove a draft option (project-only)
+  function removeDraftOption(qIndex, optIndex) {
+    setDraftQuestions((prev) => {
+      const copy = deepCopy(prev);
+      copy[qIndex].options = (copy[qIndex].options || []).filter((_, i) => i !== optIndex);
+      return copy;
+    });
+  }
+
+  // Upload image and set it into draft option (project-only)
+  async function handleDraftOptionImageUpload(qIndex, optIndex, file) {
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const { imageUrl } = await uploadImage(formData);
+      updateDraftOptionImageUrl(qIndex, optIndex, imageUrl);
+    } catch (err) {
+      setError(err.message || "Failed to upload image");
+    }
+  }
+
+  /* =========================================================
+   * Derived data (current instance + questions to render)
+   * ========================================================= */
+
+  // List of assigned questionnaire instances in project
+  const assignedInstances = useMemo(() => {
+    return Array.isArray(project?.designQuestionnaires)
+      ? project.designQuestionnaires
+      : [];
+  }, [project]);
+
+  // Current selected instance object
+  const currentInstance = useMemo(() => {
+    return (
+      assignedInstances.find((q) => String(q._id) === String(selectedInstanceId)) ||
+      assignedInstances[0] ||
+      null
+    );
+  }, [assignedInstances, selectedInstanceId]);
+
+  // Questions shown on screen (draft in edit mode, otherwise instance)
+  const questionsToRender = useMemo(() => {
+    if (isDesigner && editingInstance) return draftQuestions;
+    return currentInstance?.questions || [];
+  }, [isDesigner, editingInstance, draftQuestions, currentInstance]);
+
+  /* =========================================================
+   * Styles
+   * ========================================================= */
 
   const pageStyle = {
     minHeight: "100vh",
@@ -385,15 +550,6 @@ export default function ProjectQuestionnairesPage() {
     boxShadow: "0 18px 45px rgba(0,0,0,0.18)",
     border: "1px solid rgba(255,192,203,0.7)",
     position: "relative",
-  };
-
-  const backLinkStyle = {
-    position: "absolute",
-    right: 24,
-    top: 20,
-    fontSize: 14,
-    textDecoration: "none",
-    color: "#1e88e5",
   };
 
   const sectionTitleStyle = {
@@ -427,33 +583,41 @@ export default function ProjectQuestionnairesPage() {
     justifyContent: "center",
     zIndex: 9999,
   };
-    const labelStyleBack = { 
+
+  const labelStyleBack = {
     padding: "8px 16px",
-    borderRadius:"999px",
-    border:"none",
-    cursor:"pointer",
+    borderRadius: "999px",
+    border: "none",
+    cursor: "pointer",
     fontWeight: 600,
     backgroundColor: "#f3f3f3",
     color: "#333333",
     boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
-    width:"110px",
+    width: "130px",
+    textAlign: "center",
+    textDecoration: "none",
   };
 
-  // -------------------------------------------------
-  // Render
-  // -------------------------------------------------
+  /* =========================================================
+   * Render
+   * ========================================================= */
+
   return (
     <div style={pageStyle}>
       <div style={cardStyle}>
-        <div style={{display:"flex",justifyContent:"flex-end"}}>
-           <Link to={`/project/${projectId}/menu`} style={labelStyleBack}>Back to Project</Link>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Link to={`/project/${projectId}/menu`} style={labelStyleBack}>
+            Back to Project
+          </Link>
         </div>
 
         <h1 style={{ fontSize: 30, fontWeight: 700, marginBottom: 8 }}>
-          Design Questionnaire
+          Project Questionnaire
         </h1>
+
         <p style={{ marginBottom: 12, fontSize: 14 }}>
-          Preview and fill in the questionnaires linked to this project.
+          Answer the questionnaire for this project.
+          {isDesigner ? " You can also customize it for this project only." : ""}
         </p>
 
         <div
@@ -470,6 +634,7 @@ export default function ProjectQuestionnairesPage() {
           <span style={{ marginLeft: 12 }}>
             <strong>Client:</strong> {project?.clientUsername || "—"}
           </span>
+
           <div style={{ fontSize: 12, color: "#777", marginTop: 4 }}>
             {assignedInstances.length === 0
               ? "No questionnaires have been assigned to this project yet."
@@ -496,16 +661,12 @@ export default function ProjectQuestionnairesPage() {
           <p>Loading questionnaire...</p>
         ) : (
           <>
-            {/* בחירת תבנית מתוך כלל התבניות – רק למעצבת */}
-            {role === "designer" && (
+            {/* Designer: assign template */}
+            {isDesigner && (
               <section>
-                <h2 style={sectionTitleStyle}>
-                  Select template to add/update on this project
-                </h2>
+                <h2 style={sectionTitleStyle}>Add or update a template in this project</h2>
 
-                <div
-                  style={{ display: "flex", gap: 8, alignItems: "center" }}
-                >
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <select
                     value={selectedTemplateId}
                     onChange={handleDesignerTemplateSelect}
@@ -514,8 +675,7 @@ export default function ProjectQuestionnairesPage() {
                     <option value="">-- choose template --</option>
                     {templates.map((tpl) => (
                       <option key={tpl._id} value={tpl._id}>
-                        {tpl.title}{" "}
-                        {tpl.roomType ? `(${tpl.roomType})` : ""}
+                        {tpl.title} {tpl.roomType ? `(${tpl.roomType})` : ""}
                       </option>
                     ))}
                   </select>
@@ -525,31 +685,22 @@ export default function ProjectQuestionnairesPage() {
                     disabled={!selectedTemplateId || saving}
                     onClick={handleAssignTemplate}
                   >
-                    {saving ? "Saving..." : "Add / update on project"}
+                    {saving ? "Saving..." : "Add / Update Template"}
                   </button>
-
-                  {/* אופציונלי – מחיקת כל השאלונים מהפרויקט */}
-                  {/* <button
-                    type="button"
-                    disabled={saving || assignedInstances.length === 0}
-                    onClick={handleClearAllQuestionnaires}
-                  >
-                    Clear all questionnaires from project
-                  </button> */}
                 </div>
+
+                <p style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                  This adds the template to this project, or updates it if it already exists.
+                </p>
               </section>
             )}
 
-            {/* בחירת איזה שאלון משויך יוצג כרגע (מעצבת + לקוח) */}
+            {/* Choose which instance to view */}
             {assignedInstances.length > 0 && (
               <section style={{ marginTop: 20 }}>
-                <h2 style={sectionTitleStyle}>
-                  Questionnaire for this project
-                </h2>
+                <h2 style={sectionTitleStyle}>Questionnaire in this project</h2>
 
-                <div
-                  style={{ display: "flex", gap: 8, alignItems: "center" }}
-                >
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <select
                     value={selectedInstanceId}
                     onChange={handleSelectedInstanceChange}
@@ -557,70 +708,80 @@ export default function ProjectQuestionnairesPage() {
                   >
                     {assignedInstances.map((inst) => (
                       <option key={inst._id} value={String(inst._id)}>
-                        {inst.title}{" "}
-                        {inst.roomType ? `(${inst.roomType})` : ""}
+                        {inst.title} {inst.roomType ? `(${inst.roomType})` : ""}
                       </option>
                     ))}
                   </select>
 
-                  {role === "designer" && selectedInstanceId && (
+                  {isDesigner && selectedInstanceId && (
                     <button
                       type="button"
                       disabled={saving}
                       onClick={handleRemoveCurrentQuestionnaire}
                     >
-                      Remove this questionnaire from project
+                      Remove from project
                     </button>
                   )}
                 </div>
               </section>
             )}
 
-            {/* אם אין בכלל שאלונים משויכים */}
-            {assignedInstances.length === 0 && (
-              <p
-                style={{ marginTop: 24, fontSize: 14, color: "#666" }}
-              >
-                Your designer has not assigned any questionnaires to this
-                project yet.
-              </p>
-            )}
-
-            {/* שאלון נוכחי – רק אם יש currentInstance */}
+            {/* Current questionnaire */}
             {currentInstance && (
               <section style={{ marginTop: 30 }}>
-                <h2
-                  style={{
-                    fontSize: 18,
-                    fontWeight: 600,
-                    marginBottom: 4,
-                  }}
-                >
+                <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>
                   {currentInstance.title}
-                  {currentInstance.roomType
-                    ? ` – ${currentInstance.roomType}`
-                    : ""}
+                  {currentInstance.roomType ? ` – ${currentInstance.roomType}` : ""}
                 </h2>
 
-                <p
-                  style={{
-                    fontSize: 13,
-                    color: "#666",
-                    marginBottom: 16,
-                  }}
-                >
-                  Please choose the options you like best and add
-                  comments if you want.
+                <p style={{ fontSize: 13, color: "#666", marginBottom: 12 }}>
+                  Choose options and add optional comments.
                 </p>
 
-                {(currentInstance.questions || []).map((q, idx) => {
-                  const key = String(q._id);
-                  const selected = answers[key]?.selectedOptions || [];
-                  const freeText = answers[key]?.freeText || "";
+                {/* Designer project-only edit toolbar */}
+                {isDesigner && (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button type="button" onClick={toggleProjectEditMode}>
+                        {editingInstance
+                          ? "Discard project-only edits"
+                          : "Customize for this project"}
+                      </button>
+
+                      {editingInstance && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={saveProjectVersion}
+                          >
+                            {saving ? "Saving..." : "Save project-only version"}
+                          </button>
+
+                          <button type="button" onClick={addDraftQuestion}>
+                            + Add Question
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    {editingInstance && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                        You are editing a project-only version. This won’t affect the template.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Questions */}
+                {questionsToRender.map((q, idx) => {
+                  const qKey = getQuestionKey(q);
+                  const selected = answers[qKey]?.selectedOptions || [];
+                  const freeText = answers[qKey]?.freeText || "";
 
                   return (
                     <div
-                      key={q._id || idx}
+                      key={qKey || idx}
                       style={{
                         border: "1px solid #eee",
                         borderRadius: 14,
@@ -629,53 +790,108 @@ export default function ProjectQuestionnairesPage() {
                         background: "rgba(255,255,255,0.9)",
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          marginBottom: 8,
-                        }}
-                      >
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                         <div>
                           <strong>{q.text}</strong>
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: "#777",
-                              marginTop: 2,
-                            }}
-                          >
-                            {q.multiple
-                              ? "You can choose multiple options"
-                              : "Choose one option"}
+                          <div style={{ fontSize: 12, color: "#777", marginTop: 2 }}>
+                            {q.multiple ? "You can choose multiple options" : "Choose one option"}
                           </div>
                         </div>
                       </div>
 
-                      {/* האופציות כתמונות/כרטיסים */}
+                      {/* Designer edit controls (draft) */}
+                      {isDesigner && editingInstance && (
+                        <div style={{ marginTop: 10 }}>
+                          <button type="button" onClick={() => removeDraftQuestion(idx)}>
+                            Remove question
+                          </button>
+
+                          <label style={{ display: "block", marginTop: 10, fontSize: 13 }}>
+                            Question text:
+                            <input
+                              type="text"
+                              value={q.text || ""}
+                              onChange={(e) => updateDraftQuestionText(idx, e.target.value)}
+                              style={{ width: "100%", marginTop: 4 }}
+                            />
+                          </label>
+
+                          <button type="button" style={{ marginTop: 10 }} onClick={() => addDraftOption(idx)}>
+                            + Add option
+                          </button>
+
+                          <div style={{ marginTop: 10 }}>
+                            <strong style={{ fontSize: 13 }}>Options:</strong>
+
+                            {(q.options || []).map((opt, optIndex) => (
+                              <div
+                                key={String(opt._id || optIndex)}
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "auto 2fr 2fr auto",
+                                  gap: 8,
+                                  alignItems: "center",
+                                  marginTop: 8,
+                                }}
+                              >
+                                <button type="button" onClick={() => removeDraftOption(idx, optIndex)}>
+                                  Remove
+                                </button>
+
+                                <input
+                                  type="text"
+                                  value={opt.text || ""}
+                                  placeholder="Option text"
+                                  onChange={(e) => updateDraftOptionText(idx, optIndex, e.target.value)}
+                                />
+
+                                <input
+                                  type="text"
+                                  value={opt.imageUrl || ""}
+                                  placeholder="Image URL"
+                                  onChange={(e) => updateDraftOptionImageUrl(idx, optIndex, e.target.value)}
+                                />
+
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) =>
+                                    handleDraftOptionImageUpload(
+                                      idx,
+                                      optIndex,
+                                      e.target.files?.[0]
+                                    )
+                                  }
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Options cards */}
                       <div
                         style={{
                           display: "grid",
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(220px,1fr))",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))",
                           gap: 12,
                         }}
                       >
                         {(q.options || []).map((opt, optIndex) => {
-                          const optId = String(opt._id);
-                          const isSelected = selected.includes(optId);
+                          const optKey = getOptionKey(opt);
+                          const isSelected = selected.includes(optKey);
+
                           return (
                             <div
-                              key={opt._id || optIndex}
+                              key={String(opt._id || optIndex)}
                               style={{
                                 ...optionCardStyle,
-                                border: isSelected
-                                  ? "2px solid #ff7fa2"
-                                  : "1px solid #ddd",
+                                border: isSelected ? "2px solid #ff7fa2" : "1px solid #ddd",
                               }}
-                              onClick={() =>
-                                toggleOption(q._id, optId, q.multiple)
-                              }
+                              onClick={() => {
+                                if (isDesigner && editingInstance) return;
+                                toggleOption(qKey, optKey, q.multiple);
+                              }}
                             >
                               {opt.imageUrl && (
                                 <img
@@ -688,13 +904,7 @@ export default function ProjectQuestionnairesPage() {
                                   }}
                                 />
                               )}
-                              <div
-                                style={{
-                                  padding: "6px 8px",
-                                  fontSize: 13,
-                                  textAlign: "center",
-                                }}
-                              >
+                              <div style={{ padding: "6px 8px", fontSize: 13, textAlign: "center" }}>
                                 {opt.text}
                               </div>
                             </div>
@@ -702,7 +912,7 @@ export default function ProjectQuestionnairesPage() {
                         })}
                       </div>
 
-                      {/* הערות חופשיות */}
+                      {/* Free text */}
                       <div style={{ marginTop: 10 }}>
                         <label style={{ fontSize: 13 }}>
                           Extra comments (optional):
@@ -710,12 +920,7 @@ export default function ProjectQuestionnairesPage() {
                             rows={2}
                             style={{ width: "100%", marginTop: 4 }}
                             value={freeText}
-                            onChange={(e) =>
-                              handleFreeTextChange(
-                                q._id,
-                                e.target.value
-                              )
-                            }
+                            onChange={(e) => handleFreeTextChange(qKey, e.target.value)}
                           />
                         </label>
                       </div>
@@ -723,31 +928,27 @@ export default function ProjectQuestionnairesPage() {
                   );
                 })}
 
+                {/* Save answers */}
                 <button
                   type="button"
-                  onClick={saveAll}
+                  onClick={saveAllAnswers}
                   disabled={saving}
-                  style={{
-                    marginTop: 12,
-                    padding: "10px 16px",
-                    borderRadius: 14,
-                  }}
+                  style={{ marginTop: 12, padding: "10px 16px", borderRadius: 14 }}
                 >
-                  {saving
-                    ? "Saving questionnaire..."
-                    : "Save questionnaire for this project"}
+                  {saving ? "Saving..." : "Save My Answers"}
                 </button>
+
+                <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                  This saves the selected options and comments for this project.
+                </div>
               </section>
             )}
           </>
         )}
 
-        {/* מודאל הגדלת תמונה */}
+        {/* Image modal */}
         {modalImage && (
-          <div
-            style={modalOverlayStyle}
-            onClick={() => setModalImage(null)}
-          >
+          <div style={modalOverlayStyle} onClick={() => setModalImage(null)}>
             <img
               src={modalImage}
               alt="Preview"
